@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>候选人工作台 · boss-cli</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
+<body>
+<header class="topbar"><a class="brand" href="/" aria-label="候选人工作台首页"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 6v20h9a6 6 0 0 0 0-12H8m0 0h8a4 4 0 0 0 0-8H8"/></svg><span>boss-cli <small>候选人工作台</small></span></a><div class="connection"><span class="dot"></span><span id="connection">正在连接本地服务</span><button id="login" class="secondary" disabled>打开 Boss 登录</button></div></header>
+<main>
+<div class="heading"><div><h1>把注意力，留给合适的人。</h1><p>从候选人简介开始，按需深入查看在线简历。</p></div><span class="local-label">本机工作区</span></div>
+<nav class="view-tabs" aria-label="工作区"><button data-view="online" aria-pressed="true">在线候选人</button><button data-view="local" aria-pressed="false">本地候选人库</button></nav>
+<section class="toolbar" aria-label="查找候选人">
+<div class="sources" role="group" aria-label="候选人来源"><button data-source="recommend" aria-pressed="true">岗位推荐</button><button data-source="search" aria-pressed="false">关键词搜索</button></div>
+<form id="query"><label class="sr-only" for="keyword">岗位关键词</label><input id="keyword" placeholder="输入岗位关键词，例如：前端工程师" maxlength="100" autocomplete="off"><button id="load" type="submit" class="primary" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><span>加载候选人</span></button></form>
+</section>
+<div class="collection-actions" id="collection-actions"><button id="collect" class="secondary" disabled>一键采集简历</button><label class="collection-limit" for="collect-limit">采集数量 <input id="collect-limit" type="number" min="1" max="500" step="1" value="30" inputmode="numeric" aria-describedby="collect-hint"> 份</label><span id="collect-hint">不足时向下加载 · 跳过本地已有简历 · 每份间隔 15–25 秒</span></div>
+<section id="batch-panel" class="batch-panel" aria-label="批量采集进度" hidden><div><strong id="batch-title"></strong><p id="batch-detail" role="status" aria-live="polite"></p><progress id="batch-progress" max="1" value="0"></progress><details id="batch-failures" hidden><summary></summary><ul id="batch-failure-list"></ul></details></div><button id="stop-batch" class="secondary">停止采集</button></section>
+<section id="feishu-actions" class="collection-actions" hidden aria-label="飞书同步">
+<button id="sync-feishu" class="secondary">一键同步到飞书</button>
+<span>全部本地数据 · 每批 50 条 · 已有记录跳过 · 无简历时附件留空</span>
+<a href="https://5th-axiom.feishu.cn/wiki/T9UdwPGwqiGeAEkwWwVcBoUPnhg?table=tbl1E7q7dQU1hNds&amp;view=vewXyGImZD" target="_blank" rel="noopener noreferrer">查看飞书表格</a>
+<p id="feishu-status" role="status" aria-live="polite" hidden></p>
+</section>
+<div id="local-pager" class="local-pager" hidden><button id="local-prev" class="secondary">上一页</button><span id="local-page"></span><button id="local-next" class="secondary">下一页</button></div>
+<div id="notice" class="notice" role="status" aria-live="polite">首次使用，请先打开 Boss 登录，在浏览器中扫码后加载候选人。</div>
+<div id="error" class="error" role="alert" hidden></div>
+<div class="workspace" id="workspace">
+<aside class="candidates" aria-label="候选人列表"><div class="list-heading"><h2>候选人 <span id="count">—</span></h2><span id="list-source">岗位推荐</span></div><div id="list-context" class="list-context">等待加载</div><div id="candidate-list"><div class="list-empty"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="17" r="7"/><path d="M10 39v-4a14 14 0 0 1 28 0v4M6 6h8M6 6v8M42 6h-8M42 6v8"/></svg><h3>你的候选人会显示在这里</h3><p>选择岗位推荐或输入搜索词，<br>加载 Boss 当前列表。</p></div></div></aside>
+<section class="detail" id="detail" aria-label="候选人详情"><div class="welcome"><div class="paper-mark"><svg viewBox="0 0 64 72" aria-hidden="true"><path d="M12 4h28l12 12v52H12zM40 4v14h12M22 34h20M22 44h20M22 54h12"/></svg></div><h2>先看简介，再读完整简历</h2><p>在左侧选择一位候选人，查看个人优势、<br>工作经历与求职期望。</p><div class="reading-note"><span>简介随列表加载</span><span>完整简历按需查看</span></div><p class="muted">仅显示 Boss 当前可见信息，不生成或补写候选人资料。</p></div></section>
+</div>
+<footer><span>通过本机 Chrome 读取 · 简历图片保存在本机</span><span>完整简历受平台查看额度限制 · OCR 已关闭</span></footer>
+</main>
+</body></html>

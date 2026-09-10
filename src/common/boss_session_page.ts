@@ -1,3 +1,4 @@
+import { createBackgroundPage } from '../browser/cdp_browser.js';
 /**
  * Boss B 端「主壳」会话：选页、必要时进入沟通页、侧栏 `.menu-list` 探测，
  * 再执行 {@link withBossSessionPage} 回调。与 `src/toolset/chat.ts`（按姓名打开会话等业务）无关。
@@ -159,10 +160,10 @@ export async function withBossSessionPage<T>(
 
       let page: Page | null = getPageRef();
       if (!page || page.isClosed()) {
-        page = (await pickExistingPage(browser)) ?? (await browser.newPage());
+        page = (await pickExistingPage(browser)) ?? (await createBackgroundPage(browser));
       }
       setSessionPage(page);
-      await page.bringToFront();
+      // 保持用户当前窗口焦点。
 
       await installBossPageGuards(page);
 

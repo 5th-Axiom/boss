@@ -1,3 +1,4 @@
+import { createBackgroundPage } from '../browser/cdp_browser.js';
 import type { Browser, Page } from 'puppeteer-core';
 import {
   detachBrowserSession,
@@ -76,10 +77,10 @@ export async function runLogin(): Promise<string> {
 
   let page: Page | null = getPageRef() ?? null;
   if (!page || page.isClosed()) {
-    page = (await pickExistingPage(browser)) ?? (await browser.newPage());
+    page = (await pickExistingPage(browser)) ?? (await createBackgroundPage(browser));
   }
   setSessionPage(page);
-  await page.bringToFront();
+  // 保持用户当前窗口焦点。
   await page.goto(BOSS_LOGIN_URL, { waitUntil: 'load', timeout: 60_000 });
 
   await detachBrowserSession();

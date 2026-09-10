@@ -162,8 +162,10 @@ export async function captureCResumeIframeToFile(
   preOpenViewport: Awaited<ReturnType<Page['viewport']>>,
   absPath: string,
 ): Promise<boolean> {
+  if (!preOpenViewport) throw new Error('简历截图缺少打开前的视口快照。');
   try {
-    await setTempHeight(page, preOpenViewport);
+    // Boss 简历布局包含侧栏与固定宽度内容；窄视口会造成横向滚动和遮挡。
+    await setTempHeight(page, { ...preOpenViewport, width: Math.max(preOpenViewport.width, 1440) });
     await waitForVisibleCResumeIframeReady(page, 2_000);
 
     const iframe = await findVisibleCResumeIframeHandle(page);
@@ -182,7 +184,8 @@ export async function captureCResumeIframeToFile(
     }
 
     try {
-      await iframe.screenshot({
+      await page.screenshot({
+        clip: box,
         path: absPath,
         type: 'png',
         captureBeyondViewport: true,

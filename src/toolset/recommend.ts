@@ -1,4 +1,5 @@
-import type { Frame, Page } from 'puppeteer-core';
+import { candidateProfile, candidateToken, type CandidateResult } from './candidate_result.js';
+import type { ElementHandle, Frame, Page } from 'puppeteer-core';
 import {
   JOB_SEARCH_ACTION_GAP_MS,
   JOB_SELECT_ACTION_GAP_MS,
@@ -235,7 +236,9 @@ export async function readRecommendList(frame: Frame): Promise<RecommendCandidat
   return (await frame.evaluate(`(() => {
     const norm = (v) => (v ?? "").replace(/\\s+/g, " ").trim();
     const cardSel = ${JSON.stringify(RECOMMEND_CARD_ROOT_SELECTOR)};
-    const cards = Array.from(document.querySelectorAll(cardSel));
+    // 同一卡片可能同时命中外层 card-item 与内层 candidate-card-wrap，只读取最外层。
+    const cards = Array.from(document.querySelectorAll(cardSel))
+      .filter((item) => !item.parentElement?.closest(cardSel));
     return cards.map((item) => {
       const inner = item.querySelector(".card-inner") || item;
       const wrap = item.matches(".candidate-card-wrap")
@@ -362,7 +365,9 @@ export async function clickGreet(
       const raw = ${targetLiteral};
       const norm = (v) => (v ?? "").replace(/\\s+/g, " ").trim();
       const cardSel = ${JSON.stringify(RECOMMEND_CARD_ROOT_SELECTOR)};
-      const cards = Array.from(document.querySelectorAll(cardSel));
+      // 同一卡片可能同时命中外层 card-item 与内层 candidate-card-wrap，只读取最外层。
+    const cards = Array.from(document.querySelectorAll(cardSel))
+      .filter((item) => !item.parentElement?.closest(cardSel));
       if (cards.length === 0) {
         return { kind: "empty" };
       }
@@ -438,67 +443,46 @@ export function markGreetProduced(
 
 /**
  * 在推荐 iframe 内根据姓名打开在线简历预览：点击候选人卡片主体 `.card-inner`（与侧栏「打招呼」分离）。
- * 父页随后出现 `c-resume` iframe（如 `source=recommend`）。旧版仅有「在线简历」链接时仍尝试点击链接。
+ * 通过浏览器原生指针事件点击，随后等待 `c-resume` iframe；不使用 DOM click() 或其它入口兜底。
  */
-export async function openRecommendResumePreview(frame: Frame, target: string): Promise<boolean> {
-  const raw = target.trim();
-  const targetLiteral = JSON.stringify(raw);
-  const opened = (await frame.evaluate(`(() => {
-    const raw = ${targetLiteral};
+export async function openRecommendResumePreview(frame: Frame, target: string, exact = false, age?: number, profile?: string): Promise<boolean> {
+  const handle = await frame.evaluateHandle(`(() => {
+    const raw = ${JSON.stringify(target.trim())};
     const norm = (v) => (v ?? "").replace(/\\s+/g, " ").trim();
     const cardSel = ${JSON.stringify(RECOMMEND_CARD_ROOT_SELECTOR)};
-    const cards = Array.from(document.querySelectorAll(cardSel));
-    if (cards.length === 0) return false;
-    const targetCard = cards.find((item) => {
-      const name =
-        norm(item.querySelector(".name-wrap .name")?.textContent) ||
-        norm(item.querySelector(".name")?.textContent);
-      return name === raw || name.includes(raw);
-    }) ?? null;
-    if (!targetCard) return false;
-
-    function tryOpen(el) {
-      if (!(el instanceof HTMLElement)) return false;
-      if (el.classList.contains("disabled")) return false;
-      const st = window.getComputedStyle(el);
-      if (st.pointerEvents === "none" || Number(st.opacity) < 0.3) return false;
-      el.scrollIntoView({ block: "center", inline: "nearest" });
-      el.click();
-      return true;
-    }
-
-    const inner = targetCard.querySelector(".card-inner");
-    if (inner instanceof HTMLElement) {
-      inner.scrollIntoView({ block: "center", inline: "nearest" });
-      inner.click();
-      return true;
-    }
-
-    const resumeOnline = targetCard.querySelector("a.resume-btn-online");
-    if (tryOpen(resumeOnline)) return true;
-    const hrefResume = targetCard.querySelector('a[href*="c-resume"], a[href*="frame/c-resume"]');
-    if (tryOpen(hrefResume)) return true;
-
-    const links = Array.from(targetCard.querySelectorAll("a, button, .btn")).filter((node) => {
-      const t = norm(node.textContent);
-      return /在线简历|查看简历|简历预览|预览/.test(t);
+    const cards = Array.from(document.querySelectorAll(cardSel))
+      .filter((item) => !item.parentElement?.closest(cardSel));
+    const card = cards.find(item => {
+      const name = norm(item.querySelector(".name-wrap .name")?.textContent) || norm(item.querySelector(".name")?.textContent);
+      const ageText = item.querySelector('.base-info')?.textContent ?? '';
+      const ageMatch = ageText.match(/(\\d{1,3})\\s*岁/);
+      const ageMatches = ${age === undefined ? 'true' : `(ageMatch !== null && Number(ageMatch[1]) === ${age})`};
+      return (name === raw || (!${exact} && name.includes(raw))) && ageMatches && (${profile === undefined ? 'true' : `(${candidateProfile.toString()})(ageText) === ${JSON.stringify(profile)}`});
     });
-    if (links.length > 0 && tryOpen(links[0])) return true;
-
-    return false;
-  })()`)) as boolean;
-  if (opened) {
+    return card?.querySelector(".card-inner") ?? null;
+  })()`);
+  try {
+    const element = handle.asElement() as ElementHandle<Element> | null;
+    if (!element) return false;
+    // 通过浏览器输入派发完整指针事件；DOM click() 不产生 pointer/mouse down/up。
+    await element.click();
     await sleepRandom(RESUME_PREVIEW_OPEN_GAP_MS.min, RESUME_PREVIEW_OPEN_GAP_MS.max);
+    return true;
+  } finally {
+    await handle.dispose();
   }
-  return opened;
 }
 
-export async function runRecommend(jobKeyword?: string): Promise<string> {
+export async function runRecommend(jobKeyword?: string, json = false): Promise<string> {
   try {
     return await withBossSessionPage(async (page) => {
       const frame = await ensureInRecommendPage(page);
       const selectedJob = await selectRecommendJob(frame, (jobKeyword ?? '').trim());
       const candidates = await readRecommendList(frame);
+      if (json) {
+        const result = recommendResult(candidates, selectedJob);
+        return JSON.stringify(result);
+      }
       const title = selectedJob ? `当前岗位：${selectedJob}` : '当前岗位：默认';
       return [title, '', renderRecommendList(candidates)].join('\n');
     });
@@ -508,3 +492,15 @@ export async function runRecommend(jobKeyword?: string): Promise<string> {
   }
 }
 
+
+export function recommendResult(candidates: RecommendCandidate[], context: string): CandidateResult {
+  return {
+          source: 'recommend', context,
+          candidates: candidates.map(c => ({
+            raw: c, platformId: c.geekId, name: c.name, token: candidateToken(c), basicInfo: c.baseInfo,
+            salary: c.salary, summary: c.advantage, expectation: c.expect,
+            work: c.experience ? [c.experience] : [], education: '',
+            tags: c.highlights, active: '',
+          })),
+        };
+}

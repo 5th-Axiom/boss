@@ -5,6 +5,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { config as loadEnv } from 'dotenv';
+import { CandidateSelectionError, ResumeNotOpenedError } from '../toolset/candidate_result.js';
 import { APP_HOME } from '../config.js';
 import { runCli, isReadlineAbortError } from './cliRouter.js';
 
@@ -21,6 +22,11 @@ async function main() {
   } catch (error) {
     if (isReadlineAbortError(error)) {
       process.exit(0);
+    }
+    if (args.includes('--json')) {
+      console.log(JSON.stringify({ error: error instanceof Error ? error.message : String(error),
+        code: error instanceof CandidateSelectionError || error instanceof ResumeNotOpenedError ? error.code : 'COMMAND_ERROR' }));
+      process.exit(1);
     }
     console.error('❌ 执行出错:', error);
     if (error instanceof Error) {

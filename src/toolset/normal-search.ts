@@ -1,3 +1,4 @@
+import { candidateProfile, candidateToken, type CandidateResult } from './candidate_result.js';
 import type { Frame, Page } from 'puppeteer-core';
 import { RESUME_PREVIEW_OPEN_GAP_MS, sleepRandom } from '../browser/index.js';
 import { withBossSessionPage } from '../common/boss_session_page.js';
@@ -8,6 +9,7 @@ const SEARCH_FRAME_READY_TIMEOUT_MS = 18_000;
 const SEARCH_RESULT_SETTLE_MS = { min: 900, max: 1600 } as const;
 
 type NormalSearchCandidate = {
+  platformId: string;
   name: string;
   active: string;
   labels: string[];
@@ -155,7 +157,7 @@ export async function readNormalSearchSelectedJobLabel(frame: Frame): Promise<st
   return label || '默认';
 }
 
-export async function openNormalSearchResumePreview(frame: Frame, target: string): Promise<boolean> {
+export async function openNormalSearchResumePreview(frame: Frame, target: string, exact = false, age?: number, profile?: string): Promise<boolean> {
   const targetLiteral = JSON.stringify(target.trim());
   const opened = (await frame.evaluate(`(() => {
     const raw = ${targetLiteral};
@@ -166,7 +168,10 @@ export async function openNormalSearchResumePreview(frame: Frame, target: string
     const targetCard =
       cards.find((item) => {
         const name = norm(item.querySelector(".name-label")?.textContent);
-        return name === raw || (!!bare && name.includes(bare));
+        const ageText = item.querySelector('.info-labels')?.textContent ?? '';
+      const ageMatch = ageText.match(/(\\d{1,3})\\s*岁/);
+      const ageMatches = ${age === undefined ? 'true' : `(ageMatch !== null && Number(ageMatch[1]) === ${age})`};
+      return (name === raw || (!${exact} && !!bare && name.includes(bare))) && ageMatches && (${profile === undefined ? 'true' : `(${candidateProfile.toString()})(ageText) === ${JSON.stringify(profile)}`});
       }) ?? null;
     if (!(targetCard instanceof HTMLElement)) return false;
 
@@ -191,7 +196,7 @@ export async function openNormalSearchResumePreview(frame: Frame, target: string
   return opened;
 }
 
-async function readNormalSearchCandidates(frame: Frame): Promise<NormalSearchCandidate[]> {
+export async function readNormalSearchCandidates(frame: Frame): Promise<NormalSearchCandidate[]> {
   return (await frame.evaluate(`(() => {
     const norm = (v) => (v ?? "").replace(/\\s+/g, " ").trim();
     const unique = (items) => Array.from(new Set(items.map(norm).filter(Boolean)));
@@ -205,6 +210,7 @@ async function readNormalSearchCandidates(frame: Frame): Promise<NormalSearchCan
         .map((el) => norm(el.textContent))
         .filter(Boolean);
       return {
+        platformId: card.getAttribute("data-geekid") || "",
         name: norm(card.querySelector(".name-label")?.textContent),
         active: norm(card.querySelector(".active-desc-text")?.textContent),
         labels,
@@ -261,7 +267,7 @@ function renderNormalSearchCandidates(
   return lines.join('\n');
 }
 
-export async function runNormalSearch(keyword?: string): Promise<string> {
+export async function runNormalSearch(keyword?: string, json = false): Promise<string> {
   const kw = (keyword ?? '').trim();
   if (kw.length > 20) {
     throw new Error('常规搜索关键词最多 20 个字符。');
@@ -278,6 +284,10 @@ export async function runNormalSearch(keyword?: string): Promise<string> {
         readCurrentSearchJob(frame),
         readNormalSearchCandidates(frame),
       ]);
+      if (json) {
+        const result = normalSearchResult(candidates, [currentKeyword, currentJob].filter(Boolean).join(' · '));
+        return JSON.stringify(result);
+      }
       return renderNormalSearchCandidates(candidates, {
         keyword: currentKeyword || kw,
         job: currentJob,
@@ -287,4 +297,15 @@ export async function runNormalSearch(keyword?: string): Promise<string> {
     const message = e instanceof Error ? e.message : String(e);
     throw new Error(`读取常规搜索列表失败：${message}`);
   }
+}
+
+export function normalSearchResult(candidates: NormalSearchCandidate[], context: string): CandidateResult {
+  return {
+          source: 'search', context,
+          candidates: candidates.map(c => ({
+            raw: c, platformId: c.platformId, name: c.name, token: candidateToken(c), basicInfo: c.basicInfo,
+            salary: '', summary: c.summary, expectation: c.expectation,
+            work: c.work, education: c.education, tags: [...c.labels, ...c.tags], active: c.active,
+          })),
+        };
 }

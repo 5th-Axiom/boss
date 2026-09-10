@@ -1,3 +1,4 @@
+import { assertPreviewCandidate, CandidateSelectionError, ResumeNotOpenedError } from './candidate_result.js';
 /**
  * 在线简历预览：须在「推荐」页、「深度搜索 aiform」页或「常规搜索」页且列表已加载；不自动跳转，否则报错。
  */
@@ -27,16 +28,22 @@ import {
   assertRecommendPageReadyForPreview,
   isBossChatRecommendUrl,
   openRecommendResumePreview,
+  readRecommendList,
 } from './recommend.js';
 import {
   assertNormalSearchPageReadyForPreview,
   isBossChatSearchUrl,
   openNormalSearchResumePreview,
+  readNormalSearchCandidates,
   readNormalSearchSelectedJobLabel,
 } from './normal-search.js';
 
 export type PreviewOptions = {
   candidateTarget: string;
+  json?: boolean;
+  expectedSource?: 'recommend' | 'search';
+  expectedToken?: string;
+  expectedAge?: number;
 };
 
 export async function runPreview(options: PreviewOptions): Promise<string> {
@@ -47,6 +54,18 @@ export async function runPreview(options: PreviewOptions): Promise<string> {
   try {
     return await withBossSessionPage(async (page) => {
       const url = page.url();
+      let profile: string | undefined;
+      if (options.json) {
+        if (!options.expectedSource || !options.expectedToken) throw new Error('结构化预览需要来源和候选人 token。');
+        const matches = options.expectedSource === 'recommend' ? isBossChatRecommendUrl(url) : isBossChatSearchUrl(url);
+        if (!matches) throw new CandidateSelectionError('STALE_LIST', 'Boss 页面来源已变化，请重新加载候选人列表。');
+        const candidates = options.expectedSource === 'recommend'
+          ? await readRecommendList(await assertRecommendPageReadyForPreview(page))
+          : await readNormalSearchCandidates(await assertNormalSearchPageReadyForPreview(page));
+        profile = assertPreviewCandidate(candidates, target, options.expectedToken, options.expectedAge);
+      }
+      // 上一位的预览失败可能留下弹层；定位当前卡片前先关闭它。
+      await closeCResumePanel(page);
       let jobLine: string;
       let savedOriginal: Awaited<ReturnType<typeof snapshotBossPageViewport>>;
       let opened: boolean;
@@ -61,13 +80,13 @@ export async function runPreview(options: PreviewOptions): Promise<string> {
         const frame = await assertRecommendPageReadyForPreview(page);
         jobLine = '当前岗位：当前推荐列表';
         savedOriginal = await snapshotBossPageViewport(page);
-        opened = await openRecommendResumePreview(frame, target);
+        opened = await openRecommendResumePreview(frame, target, options.json, options.expectedAge, profile);
       } else if (isBossChatSearchUrl(url)) {
         const frame = await assertNormalSearchPageReadyForPreview(page);
         const label = await readNormalSearchSelectedJobLabel(frame);
         jobLine = `当前岗位：${label}`;
         savedOriginal = await snapshotBossPageViewport(page);
-        opened = await openNormalSearchResumePreview(frame, target);
+        opened = await openNormalSearchResumePreview(frame, target, options.json, options.expectedAge, profile);
       } else {
         throw new Error('当前不在推荐列表页、深度搜索页或常规搜索页，无法预览候选人。');
       }
@@ -83,7 +102,7 @@ export async function runPreview(options: PreviewOptions): Promise<string> {
         if (paywall) {
           throw new Error(paywall);
         }
-        throw new Error('点击后未出现在线简历 iframe（c-resume）。');
+        throw new ResumeNotOpenedError();
       }
       const ready = await waitForVisibleCResumeIframeReady(page);
       if (!ready) {
@@ -102,7 +121,8 @@ export async function runPreview(options: PreviewOptions): Promise<string> {
       const disclaimer =
         '说明：平台对在线简历的每日可查看次数有限，请按需使用、谨慎查看。';
 
-      if (!isResumeOcrEnabled()) {
+      if (options.json || !isResumeOcrEnabled()) {
+        if (options.json) return JSON.stringify({ name: target, imagePath: absPath });
         return [jobLine, `简历预览截图：${absPath}`, '', disclaimer].join('\n');
       }
       try {
@@ -123,6 +143,7 @@ export async function runPreview(options: PreviewOptions): Promise<string> {
       }
     });
   } catch (e) {
+    if (e instanceof CandidateSelectionError || e instanceof ResumeNotOpenedError) throw e;
     const message = e instanceof Error ? e.message : String(e);
     throw new Error(`简历预览失败：${message}`);
   }

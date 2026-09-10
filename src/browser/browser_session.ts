@@ -1,3 +1,4 @@
+import { createBackgroundPage } from './cdp_browser.js';
 import type { ChildProcess } from 'node:child_process';
 import type { Browser, Page } from 'puppeteer-core';
 import { clearSpawnedChromeProcessRef, connectBrowser } from './cdp_browser.js';
@@ -25,7 +26,7 @@ function attachDisconnectedHandler(b: Browser): void {
 async function pickOrCreatePage(b: Browser): Promise<Page> {
   const pages = (await b.pages()).filter((p) => !p.isClosed());
   if (pages.length === 0) {
-    return b.newPage();
+    return createBackgroundPage(b);
   }
 
   const urls = await Promise.all(

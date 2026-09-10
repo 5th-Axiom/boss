@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import readline from 'node:readline';
+import type { Socket } from 'node:net';
 import path from 'node:path';
 import puppeteer, { type Browser, type CDPSession, type Page } from 'puppeteer-core';
 import { BROWSER_USER_DATA_DIR, ensureAppDataLayout } from '../config.js';
@@ -294,6 +295,7 @@ export async function connectBrowser(options: ConnectBrowserOptions = {}): Promi
   const disableWasm = process.env.BOSS_BROWSER_DISABLE_WASM === 'true' || process.env.BOSS_BROWSER_DISABLE_WASM === '1';
   const userArgs = [
     ...LAUNCH_ARGS_LESS_AUTOMATION,
+    '--no-startup-window',
     ...(disableGpu ? ['--disable-gpu'] : []),
     ...(disableWasm ? ['--js-flags=--noexpose_wasm'] : []),
     ...(allowAllCors ? LAUNCH_ARGS_ALLOW_ALL_CORS : []),
@@ -348,6 +350,10 @@ export async function connectBrowser(options: ConnectBrowserOptions = {}): Promi
   if (proc.exitCode === null && proc.signalCode === null) {
     try {
       proc.unref();
+      // spawn 的 pipe 是 Socket；仅 unref 子进程不会释放两条日志管道对事件循环的引用。
+      // 继续消费日志而不关闭管道，让 Chrome 留存且 CLI 能正常退出。
+      (proc.stdout as Socket | null)?.unref();
+      (proc.stderr as Socket | null)?.unref();
     } catch {
       /* ignore */
     }
@@ -374,4 +380,19 @@ export async function connectBrowser(options: ConnectBrowserOptions = {}): Promi
 /** 对某一页创建原生 CDP Session（需要低层域如 `Network.*`、`Fetch.*` 时使用）。 */
 export async function createPageCDPSession(page: Page): Promise<CDPSession> {
   return page.createCDPSession();
+}
+
+/** 创建后台标签页，不主动激活 Chrome 或切换当前标签。 */
+export async function createBackgroundPage(browser: Browser): Promise<Page> {
+  const session = await browser.target().createCDPSession();
+  try {
+    const url = 'about:blank#boss-cli-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+    const { targetId } = await session.send('Target.createTarget', { url, background: true });
+    try {
+      const target = await browser.waitForTarget(target => target.url() === url);
+      const page = await target.page();
+      if (!page) throw new Error('后台浏览器标签创建失败。');
+      return page;
+    } catch (error) { await session.send('Target.closeTarget', { targetId }); throw error; }
+  } finally { await session.detach(); }
 }

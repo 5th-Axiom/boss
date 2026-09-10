@@ -138,3 +138,11 @@ boss chat 李四
 Boss 主包中存在反 DevTools / 反篡改逻辑，可能通过 `console.log` / `console.table` 副作用、`console.clear()`、快捷键拦截、打印大对象耗时、原生对象完整性检查等方式判断 DevTools 是否打开。
 
 自动化命令执行时，不建议手动打开页面 DevTools。需要排查页面行为时，优先使用 CDP 事件、Network initiator、外部日志或截图；如果必须打开 DevTools，应预期页面可能触发检测上报、清空控制台、跳转、隐藏页面或关闭/回退页面。
+
+## CLI 首次启动 Chrome 后的退出
+
+`spawn` 之后不仅要 `proc.unref()`，还必须对 stdout/stderr 的管道 Socket 调用 `unref()`。管道继续消费 Chrome 日志，但不再维持 Node 事件循环；否则登录命令虽已完成，CLI 仍无法退出，本地工作台会持续显示忙碌直至超时。仅断开 CDP 或清空进程变量不能释放这些引用。
+
+## 焦点行为
+
+CLI 不再主动 `bringToFront()`。Chrome 首次启动禁止自动创建前台启动窗口；缺少页面时，通过 CDP `Target.createTarget(background: true)` 创建后台页。用户需主动切换到 Chrome 完成登录或验证。此变更不引入额外 Boss 页面用于截图，仍使用现有截图路径。

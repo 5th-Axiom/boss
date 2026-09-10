@@ -1,3 +1,4 @@
+import { executeJsonCommand } from './json.js';
 /**
  * CLI：子命令直接调用 toolset 中的 impl*。
  * 无参数时进入交互模式，逐行解析与 `boss <argv...>` 相同的命令。
@@ -130,7 +131,7 @@ function normalizeSubcommand(cmd: string): string {
 }
 
 function printHelp(): void {
-  console.error(`boss-cli — Boss 直聘浏览器自动化（纯 CLI，无 Agent 运行时）
+  console.error(`boss-cli — Boss 直聘浏览器自动化（无 Agent 运行时）
 
 用法与说明:
   boss
@@ -141,7 +142,7 @@ function printHelp(): void {
       显示当前版本并检查 npm 是否有更新
   boss update
       使用 npm 安装最新版 boss-cli
-  boss login
+  boss login [--json]
       打开登录页（需要用户在浏览器中自行完成登录，这个命令会直接返回）
   boss list [--unread]
       读取「全部」聊天列表候选人；--unread 仅显示未读（角标>0）
@@ -163,11 +164,16 @@ function printHelp(): void {
       读取当前职位列表（含开放/待开放/已关闭状态）
   boss jd <name>
       抓取指定职位详情并缓存到项目目录同名 .md
-  boss recommend [岗位关键字]
+  boss recommend [岗位关键字] [--json]
       进入推荐页并读取推荐列表；带岗位关键字时先在岗位下拉中模糊匹配并切换
-  boss search [关键词]
+  boss list-current --json --source recommend|search
+      只读取当前来源列表，不导航或滚动（自动重试使用）。
+  boss list-more --json --source recommend|search
+      在当前来源页向下滚动加载更多候选人，不刷新页面。
+  boss search [关键词] [--json]
       进入「搜索」页并读取 Boss 默认常规搜索结果；带关键词时填入搜索框并回车搜索
   boss preview <姓名>
+      JSON 图片预览: preview "姓名" --json --source recommend|search --token <token> [--age <年龄>]
       在线简历预览：须当前已在「推荐」(/web/chat/recommend)、「深度搜索」(/web/chat/aiform) 或「常规搜索」(/web/chat/search) 且列表已加载；不会自动跳转
       注意：平台对在线简历每日可查看次数有限，请按需使用、谨慎查看
   boss greet <姓名> [--job <岗位关键字>]
@@ -370,6 +376,7 @@ export async function executeCommand(argv: string[]): Promise<string> {
   const cmd = normalizeSubcommand(argv[0]);
   const tail = argv.slice(1);
   configureHeadlessForCommand(cmd);
+  if (tail.includes('--json')) return executeJsonCommand(cmd, tail);
 
   if (cmd === '_baidu-keys') {
     const { rest, opts } = parseOpts(tail);
@@ -578,6 +585,7 @@ export async function runOneCommand(argv: string[]): Promise<void> {
     const text = await executeCommand(argv);
     printStdout(text);
   } catch (e) {
+    if (argv.includes('--json')) throw e;
     console.error(e instanceof Error ? e.message : String(e));
     process.exitCode = 1;
   }
@@ -652,7 +660,7 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
-  if (normalizeSubcommand(argv[0] ?? '') !== 'update') {
+  if (!argv.includes('--json') && normalizeSubcommand(argv[0] ?? '') !== 'update') {
     await printPackageUpdateNoticeIfDue();
   }
 
