@@ -13,7 +13,12 @@ test('平台 ID 更新、同名隔离、无 ID 独立保存、简历跨重启持
     const one = db.saveList({source:'recommend',context:'岗位甲',candidates:[candidate]}).candidates[0];
     const image = join(dir,'test.png');writeFileSync(image,'test-image');
     assert.equal(db.hasResume('recommend','42'),false);
+    db.saveResumeFailure(one.localId,'点击后未出现简历','RESUME_NOT_OPENED');
+    db.close();db=new CandidateDatabase(dir);
+    assert.equal(db.list('').candidates[0].resumeFailure.reason,'点击后未出现简历');
+    assert.equal(db.list('').candidates[0].resumeFailure.code,'RESUME_NOT_OPENED');
     const resume = db.saveResume(one.localId,image);
+    assert.equal(db.list('').candidates[0].resumeFailure,null);
     assert.equal(db.hasResume('recommend','42'),true);
     assert.equal(db.hasResume('recommend','43'),false);
     const two = db.saveList({source:'recommend',context:'岗位乙',candidates:[{...candidate,summary:'更新简介',token:'b'}]}).candidates[0];

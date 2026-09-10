@@ -30,22 +30,24 @@ test('全部本地数据按50条分批、跳过已有、提取四项和上传附
  const directory=await mkdtemp(join(tmpdir(),'feishu-test-'));const f=fixture();
  try {
   const path=join(directory,'resume.png');await writeFile(path,'test-image');
-  const candidates=Array.from({length:102},(_,i)=>({syncKey:'key'+i,name:'测试'+i,basicInfo:'22岁 / 28年应届生 / 本科 / 刚刚活跃',resumePath:i===1?path:null}));
+  const candidates=Array.from({length:102},(_,i)=>({syncKey:'key'+i,name:'测试'+i,basicInfo:'22岁 / 28年应届生 / 本科 / 刚刚活跃',resumePath:path}));
+  candidates.push({syncKey:'no-resume',name:'未采集',basicInfo:'',resumePath:null});
   f.records.push({fields:{'同步标识':[{text:'key0'}]}});
   const db={directory,syncCandidates:()=>candidates};const state=progress();
   await syncToFeishu(db,f.client,state,()=>{});
-  assert.equal(state.completed,101);assert.equal(state.skipped,1);assert.equal(state.total,102);
-  assert.deepEqual(f.batches.map(b=>b.records.length),[50,50,1]);assert.equal(f.uploads.length,1);
+  assert.equal(state.completed,101);assert.equal(state.skipped,1);assert.equal(state.total,102);assert.equal(state.withoutResume,1);
+  assert.deepEqual(f.batches.map(b=>b.records.length),[50,50,1]);assert.equal(f.uploads.length,101);
   assert.equal(f.uploads[0].get('parent_type'),'bitable_file');assert.equal(f.uploads[0].get('parent_node'),'base');
   const fields=f.records[1].fields;assert.equal(fields['年龄'],22);assert.equal(fields['毕业／经验标签'],'28年应届生');assert.equal(fields['学历'],'本科');assert.deepEqual(fields['简历附件'],[{file_token:'attachment1'}]);
   const second=progress();await syncToFeishu(db,f.client,second,()=>{});
-  assert.equal(second.completed,0);assert.equal(second.skipped,102);assert.equal(f.uploads.length,1);assert.equal(f.batches.length,3);
+  assert.equal(second.completed,0);assert.equal(second.skipped,102);assert.equal(f.uploads.length,101);assert.equal(f.batches.length,3);
  }finally{await rm(directory,{recursive:true,force:true});}
 });
 test('写入后响应丢失，重启后复用持久化请求标识，不重复创建',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'feishu-test-'));const f=fixture();
  try {
-  const db={directory,syncCandidates:()=>[{syncKey:'a',name:'测试',basicInfo:'22岁 / 3年 / 硕士',resumePath:null}]};f.setFail();
+  const path=join(directory,'resume.png');await writeFile(path,'test-image');
+  const db={directory,syncCandidates:()=>[{syncKey:'a',name:'测试',basicInfo:'22岁 / 3年 / 硕士',resumePath:path}]};f.setFail();
   await assert.rejects(syncToFeishu(db,f.client,progress(),()=>{}),/连接中断/);
   const journal=JSON.parse(await readFile(join(directory,'feishu/base-table.json'),'utf8'));
   const second=progress();await syncToFeishu(db,f.client,second,()=>{});

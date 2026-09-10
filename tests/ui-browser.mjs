@@ -25,7 +25,7 @@ try {
     const url = new URL(request.url());
     if (url.pathname === '/api/feishu/sync') { syncClicked=true;return request.respond({status:202,contentType:'application/json',body:JSON.stringify({status:'running',total:102,completed:0,skipped:1,phase:'正在上传测试简历'})}); }
     if (url.pathname === '/api/batch') { batchPayload = JSON.parse(request.postData()); return request.respond({status:202,contentType:'application/json',body:JSON.stringify({status:'running'})}); }
-    if (url.pathname === '/api/local') return request.respond({ status:200, contentType:'application/json', body:JSON.stringify({source:'local',context:'本地保存 2 位候选人',total:2,candidates:fixtures.map((c,i)=>({...c,localId:'local-'+i,identityConfirmed:true,source:'recommend',context:'测试岗位',updatedAt:new Date().toISOString(),imageUrl:i===0?'/test-resume.svg':null}))}) });
+    if (url.pathname === '/api/local') return request.respond({ status:200, contentType:'application/json', body:JSON.stringify({source:'local',context:'本地保存 2 位候选人',total:2,candidates:fixtures.map((c,i)=>({...c,localId:'local-'+i,identityConfirmed:true,source:'recommend',context:'测试岗位',updatedAt:new Date().toISOString(),resumeFailure:i===1?{reason:'测试：简历窗口未出现',code:'RESUME_NOT_OPENED',failedAt:new Date().toISOString()}:null,imageUrl:i===0?'/test-resume.svg':null}))}) });
     if (url.pathname === '/api/command') {
       const data = JSON.parse(request.postData());
       if (data.command === 'recommend' || data.command === 'search') listReadCount++;
@@ -112,6 +112,7 @@ try {
   assert.equal(previewCount,previewsBeforeLocal);
   await page.screenshot({path:join(output,'mobile-local.png'),fullPage:true});
   await page.click('.candidate:nth-child(2)');assert.equal(await page.$eval('.resume-callout button',n=>n.disabled),true);
+  assert.match(await page.$eval('.profile',n=>n.textContent),/最近一次简历获取失败：测试：简历窗口未出现/);
   await page.setViewport({width:1440,height:1050});
   await page.evaluate(`window.testStatusEvents.dispatchEvent(new MessageEvent('message',{data:${JSON.stringify(JSON.stringify({...session,busy:true,operation:{command:'batch'},batch:{id:'test',status:'running',total:2,completed:1,current:'测试候选人乙',phase:'waiting',nextAt:Date.now()+20000}}))}}))`);
   assert.equal(await page.$eval('#stop-batch',n=>n.disabled),false);

@@ -93,7 +93,7 @@ function renderList() {
     top.append(element('span', 'candidate-name', candidate.name));
     if (candidate.salary) top.append(element('span', 'salary', candidate.salary));
     item.append(top, element('p', 'candidate-basic', candidate.basicInfo || '列表未提供基本信息'));
-    if (state.view === 'local') item.append(element('p', 'saved-meta', `${candidate.imageUrl ? '已保存简历' : '仅简介'} · ${candidate.identityConfirmed ? '平台身份已记录' : '身份未确认，独立保存'}`));
+    if (state.view === 'local') item.append(element('p', 'saved-meta', `${candidate.imageUrl ? '已保存简历' : candidate.resumeFailure ? '简历获取失败' : '仅简介（未采集或历史原因未记录）'} · ${candidate.identityConfirmed ? '平台身份已记录' : '身份未确认，独立保存'}`));
     if (candidate.summary) item.append(element('p', 'candidate-summary', candidate.summary));
     list.append(item);
   });
@@ -137,6 +137,7 @@ function renderDetail() {
   heading.append(identity);
   if (candidate.salary) heading.append(element('div', 'profile-salary', candidate.salary));
   profile.append(heading);
+  if (state.view === 'local' && candidate.resumeFailure) profile.append(element('p', 'saved-meta', `最近一次简历获取失败：${candidate.resumeFailure.reason} · ${new Date(candidate.resumeFailure.failedAt).toLocaleString('zh-CN')}`));
   if (state.view === 'local') profile.append(element('p', 'saved-meta', `来源：${candidate.source === 'recommend' ? '岗位推荐' : '关键词搜索'} · ${candidate.context || '未提供岗位'} · 更新于 ${new Date(candidate.updatedAt).toLocaleString('zh-CN')}${candidate.resumeUpdatedAt ? ' · 简历更新于 ' + new Date(candidate.resumeUpdatedAt).toLocaleString('zh-CN') : ''}`));
   if (candidate.tags.length) {
     const tags = element('div', 'tags'); [...new Set(candidate.tags)].forEach(tag => tags.append(element('span', 'tag', tag))); profile.append(tags);
@@ -334,7 +335,7 @@ function renderFeishu(sync) {
   $('#sync-feishu').textContent = sync?.status === 'running' ? '正在同步到飞书…' : '一键同步到飞书';
   if (!sync) return;
   const label = {running:'正在同步',complete:'同步完成',failed:'同步已停止'}[sync.status];
-  node.textContent = `${label} · 新增 ${sync.completed} · 跳过已有 ${sync.skipped} · 本地共 ${sync.total} 条。${sync.error || sync.phase}${sync.status === 'failed' ? ' 已成功同步的数据保留；处理错误后可再次点击同步。' : ''}`;
+  node.textContent = `${label} · 新增 ${sync.completed} · 跳过已有 ${sync.skipped} · 有简历 ${sync.total} 条 · 无简历不上传 ${sync.withoutResume ?? 0} 条。${sync.error || sync.phase}${sync.status === 'failed' ? ' 已成功同步的数据保留；处理错误后可再次点击同步。' : ''}`;
   node.classList.toggle('sync-failed', sync.status === 'failed');
 }
 $('#sync-feishu').addEventListener('click', async () => {

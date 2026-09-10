@@ -78,6 +78,7 @@ async function runCli(args: string[]): Promise<unknown> {
 }
 async function previewAndSave(candidate: CandidateResult['candidates'][number], source: string) {
   if (!candidate.localId) throw new Error('候选人尚未写入本地数据库。');
+  try {
   const age = candidateAge(candidate);
   const args = ['preview', candidate.name, '--json', '--source', source, '--token', candidate.token];
   if (age !== undefined) args.push('--age', String(age));
@@ -87,6 +88,10 @@ async function previewAndSave(candidate: CandidateResult['candidates'][number], 
   const rel = relative(base, imagePath);
   if (!rel || rel.startsWith('..') || isAbsolute(rel) || !imagePath.endsWith('.png')) throw new Error('CLI 返回了不合法的简历图片路径。');
   return { ...database.saveResume(candidate.localId, imagePath), name: candidate.name };
+  } catch (error) {
+    database.saveResumeFailure(candidate.localId,error instanceof Error ? error.message : String(error),(error as {code?:string}).code);
+    throw error;
+  }
 }
 async function runBatch(source: string, keyword: string, abort: AbortController) {
   const current = batch!;
@@ -100,8 +105,8 @@ async function runBatch(source: string, keyword: string, abort: AbortController)
       const unseen = pageResult.candidates.filter(candidate => {
         if (!candidate.platformId) {
           const key = 'unidentified:' + candidate.token;
-          if (!visited.has(key)) { visited.add(key); current.failures.push({name:candidate.name,age:candidateAge(candidate),reason:'缺少平台身份标识，无法可靠去重，已跳过。'}); publishStatus(); }
-          return false;
+          if (visited.has(key)) return false;
+          visited.add(key); return true;
         }
         if (visited.has(candidate.platformId)) return false;
         visited.add(candidate.platformId);
@@ -115,6 +120,7 @@ async function runBatch(source: string, keyword: string, abort: AbortController)
           current.skipped++; publishStatus(); continue;
         }
         try {
+        if (!candidate.platformId) throw new Error('缺少平台身份标识，无法可靠去重，已跳过。');
         const age = candidateAge(candidate);
         if (age === undefined) throw new Error('列表未提供年龄，无法按姓名和年龄定位。');
         if (pageResult.candidates.filter(c => candidateIdentity(c) === candidateIdentity(candidate)).length !== 1) throw new Error('存在姓名、年龄、毕业／经验标签和学历均相同的记录，无法唯一确认身份。');
@@ -146,6 +152,7 @@ async function runBatch(source: string, keyword: string, abort: AbortController)
         current.completed++; publishStatus();
         } catch (error) {
           const reason = (error as {code?:string})?.code === 'RESUME_NOT_OPENED' ? '多次尝试仍未打开简历，已跳过，继续采集下一位。' : error instanceof Error ? error.message : String(error);
+          database.saveResumeFailure(candidate.localId!,reason,(error as {code?:string}).code);
           current.failures.push({ name: candidate.name, age: candidateAge(candidate), reason });
           current.nextAt = undefined;
           console.error(`[boss-ui] batch ${current.id} candidate ${candidate.platformId}: skipped after failure: ${reason}`);
@@ -258,7 +265,11 @@ const server = createServer(async (req, res) => {
           if (!snapshot || data.snapshotId !== snapshot.id) throw new HttpError(409, '列表已失效，请重新加载候选人。', 'STALE_LIST');
           const candidate = snapshot.candidates.find(c => c.token === data.token);
           if (!candidate) throw new HttpError(400, '候选人不在当前列表中。');
-          if (snapshot.candidates.filter(c => candidateIdentity(c) === candidateIdentity(candidate)).length !== 1) throw new HttpError(409, '列表中有姓名、年龄、毕业／经验标签和学历均相同的候选人，请在 Boss 页面查看以确认身份。');
+          if (snapshot.candidates.filter(c => candidateIdentity(c) === candidateIdentity(candidate)).length !== 1) {
+            const reason='列表中有姓名、年龄、毕业／经验标签和学历均相同的候选人，请在 Boss 页面查看以确认身份。';
+            database.saveResumeFailure(candidate.localId!,reason,'AMBIGUOUS_CANDIDATE');
+            throw new HttpError(409,reason);
+          }
           return json(res, 200, await previewAndSave(candidate, snapshot.source));
         }
         snapshot = undefined;

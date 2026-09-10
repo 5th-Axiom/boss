@@ -51,7 +51,8 @@ test('批量自动入库、互斥、节奏、停止，服务重启后简历仍�
   assert.equal(session.batch.completed,2);assert.equal(session.batch.skipped,1);
   assert.equal(session.batch.failures.length,1);assert.equal(session.batch.failures[0].name,'丙');
   assert.match(session.batch.failures[0].reason,/不可访问/);
-  assert.equal((await(await fetch(origin+'/api/local')).json()).total,4);
+  const afterBatch=await(await fetch(origin+'/api/local')).json();assert.equal(afterBatch.total,4);
+  assert.match(afterBatch.candidates.find(c=>c.name==='丙').resumeFailure.reason,/不可访问/);
   const {readFile}=await import('node:fs/promises');
   assert.deepEqual((await readFile(join(dir,'preview-log'),'utf8')).trim().split('\n'),['甲','乙','丙','丁']);
   assert.equal((await post('/api/batch',{source:'recommend',keyword:'',limit:1})).status,202);

@@ -14,6 +14,7 @@ export class CandidateDatabase {
       CREATE TABLE IF NOT EXISTS candidates(id TEXT PRIMARY KEY, identity_key TEXT UNIQUE, name TEXT NOT NULL,
         payload TEXT NOT NULL, source TEXT NOT NULL, context TEXT NOT NULL, first_seen TEXT NOT NULL, updated_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS observations(id INTEGER PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES candidates(id), payload TEXT NOT NULL, context TEXT NOT NULL, seen_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS resume_failures(candidate_id TEXT PRIMARY KEY REFERENCES candidates(id), reason TEXT NOT NULL, code TEXT NOT NULL, failed_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS resumes(id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL REFERENCES candidates(id), created_at TEXT NOT NULL);
     `);
   }
@@ -48,7 +49,12 @@ export class CandidateDatabase {
     const now = new Date().toISOString();
     this.db.prepare('INSERT INTO resumes VALUES(?,?,?)').run(id,candidateId,now);
     this.db.prepare('UPDATE candidates SET updated_at=? WHERE id=?').run(now,candidateId);
+    this.db.prepare('DELETE FROM resume_failures WHERE candidate_id=?').run(candidateId);
     return { imageUrl: `/api/local/resume/${id}`, resumeUpdatedAt: now };
+  }
+  saveResumeFailure(candidateId: string, reason: string, code = 'RESUME_FAILED') {
+    this.db.prepare(`INSERT INTO resume_failures VALUES(?,?,?,?) ON CONFLICT(candidate_id) DO UPDATE SET
+      reason=excluded.reason,code=excluded.code,failed_at=excluded.failed_at`).run(candidateId,reason,code,new Date().toISOString());
   }
   list(query: string, offset = 0) {
     const where = 'WHERE instr(name,?)>0 OR instr(payload,?)>0';
@@ -57,6 +63,7 @@ export class CandidateDatabase {
       (SELECT max(created_at) FROM resumes WHERE candidate_id=candidates.id) resume_time FROM candidates ${where} ORDER BY updated_at DESC,id LIMIT 100 OFFSET ?`).all(query,query,offset);
     return { source:'local', context:`本地保存 ${count} 位候选人`, total:count, offset, candidates: rows.map(row => ({
       ...JSON.parse(String(row.payload)) as Candidate, localId:row.id, source:row.source, context:row.context,
+      resumeFailure: this.db.prepare('SELECT reason,code,failed_at AS failedAt FROM resume_failures WHERE candidate_id=?').get(row.id) ?? null,
       identityConfirmed: row.identity_key !== null, updatedAt:row.updated_at, firstSeen:row.first_seen,
       imageUrl:row.resume_id ? `/api/local/resume/${row.resume_id}` : null, resumeUpdatedAt:row.resume_time,
     })) };

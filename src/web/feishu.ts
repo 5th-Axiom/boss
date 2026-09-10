@@ -8,7 +8,7 @@ import type { CandidateDatabase } from './database.js';
 export const FEISHU_FIELDS = [{field_name:'姓名',type:1},{field_name:'年龄',type:2},{field_name:'毕业／经验标签',type:1},{field_name:'学历',type:1},{field_name:'简历附件',type:17},{field_name:'同步标识',type:1}];
 type Config = {appId:string;appSecret:string;wikiToken:string;tableId:string};
 type RecordInput = {fields: Record<string, unknown>};
-export type SyncProgress = {status:'running'|'complete'|'failed'; total:number;completed:number;skipped:number;phase:string;error?:string};
+export type SyncProgress = {status:'running'|'complete'|'failed'; total:number;completed:number;skipped:number;withoutResume?:number;phase:string;error?:string};
 export class FeishuClient {
   private token = '';
   private expires = 0;
@@ -89,13 +89,16 @@ export async function syncToFeishu(database:CandidateDatabase, client:FeishuClie
   let pending:{records:RecordInput[];clientToken:string}|undefined;
   try { pending=JSON.parse(await readFile(journal,'utf8')); } catch(error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   if (pending) {
+    if (pending.records.some(record=>!Array.isArray(record.fields['简历附件']) || !record.fields['简历附件'].length)) throw new Error('上次待确认批次包含无简历记录，与当前仅同步有简历的规则不符。请先核对该历史批次，已暂停上传。');
     progress.phase='正在确认上次未完成的同步批次';publish();
     await client.create(pending.records,pending.clientToken); await unlink(journal);
   }
   progress.phase='正在读取飞书已有记录';publish();
   const existing=await client.list(client.tablePath+'/records');
   const keys=new Set(existing.map(record=>fieldText(record.fields['同步标识'])).filter(Boolean));
-  const candidates=database.syncCandidates(); progress.total=candidates.length;publish();
+  const all=database.syncCandidates();
+  const candidates=all.filter(candidate=>candidate.resumePath);
+  progress.withoutResume=all.length-candidates.length;progress.total=candidates.length;publish();
   let records:RecordInput[]=[];
   async function flush() {
     if (!records.length) return;
