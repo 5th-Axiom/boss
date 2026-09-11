@@ -1,5 +1,5 @@
 const $ = selector => document.querySelector(selector);
-const state = { view: 'online', batch: null, localOffset: 0, csrf: '', source: 'recommend', busy: false, remoteBusy: false };
+const state = { view: 'online', batch: null, localOffset: 0, csrf: '', source: 'recommend', busy: false, remoteBusy: false, searchFilters: null };
 const createViewState = () => ({ stale: false, result: null, selected: -1, tab: 'summary', images: new Map(), keyword: '' });
 const views = { online: createViewState(), local: createViewState() };
 // 两个工作区独立持有数据；切换视图只改变当前读写的工作区。
@@ -40,6 +40,7 @@ function syncBusy() {
     const local = node.closest('#local-pager') || node.dataset.view || (state.view === 'local' && (node.closest('#query') || node.closest('#workspace')));
     node.disabled = !state.csrf || node.dataset.unavailable === 'true' || (!local && (state.busy || state.remoteBusy));
   });
+  $('#search-filter-actions').hidden=state.view!=='online'||state.source!=='search';
   $('#stop-batch').disabled = !state.csrf || state.batch?.status !== 'running';
   $('#workspace').setAttribute('aria-busy', String(state.busy || state.remoteBusy));
   $('#load span').textContent = state.view === 'local' ? '查询本地数据' : (state.busy || state.remoteBusy) ? '正在处理…' : '加载候选人';
@@ -207,7 +208,7 @@ $('#query').addEventListener('submit', async event => {
   event.preventDefault(); if (state.view === 'local') { state.localOffset = 0; await loadLocal(); return; } if (state.busy || state.remoteBusy || !state.csrf) return;
   resetResults();
   try {
-    const result = await command({ command: state.source, keyword: $('#keyword').value.trim() }, '正在读取 Boss 候选人，请保持浏览器页面不变…');
+    const result = await command({ command: state.source, keyword: $('#keyword').value.trim(), ...(state.source==='search' && state.searchFilters?{filters:state.searchFilters}:{}) }, '正在读取 Boss 候选人，请保持浏览器页面不变…');
     views.online.result = result;
     views.online.selected = result.candidates.length ? 0 : -1;
     if (state.view !== 'online') return;
@@ -278,7 +279,7 @@ $('#collect').addEventListener('click', async () => {
   state.busy = true; syncBusy(); $('#error').hidden = true;
   try {
     resetResults();
-    await batchRequest('/api/batch', {source:state.source,keyword:$('#keyword').value.trim(),limit});
+    await batchRequest('/api/batch', {source:state.source,keyword:$('#keyword').value.trim(),limit,...(state.source==='search'&&state.searchFilters?{filters:state.searchFilters}:{})});
     notice('已开始采集。可以切换到本地候选人库查看已保存的资料。');
   } catch (error) { showError(error); }
   finally { state.busy = false; syncBusy(); }
@@ -315,7 +316,7 @@ events.onmessage = event => {
   $('.dot').classList.add('ready');
   syncBusy();
   if (!state.busy && session.busy && session.operation.command !== 'batch') {
-    const names = { login: '打开 Boss 登录页', recommend: '读取岗位推荐', search: '搜索候选人', preview: '读取完整简历', feishu: '同步本地数据到飞书' };
+    const names = { login: '打开 Boss 登录页', recommend: '读取岗位推荐', search: '搜索候选人', preview: '读取完整简历', 'search-filters':'读取 Boss 筛选条件', feishu: '同步本地数据到飞书' };
     notice(`正在${names[session.operation.command]}，请等待完成。`, true);
   } else if (!state.busy && wasBusy) {
     notice('上一项操作已结束，可以加载候选人。');
@@ -344,4 +345,44 @@ $('#sync-feishu').addEventListener('click', async () => {
   try { renderFeishu(await batchRequest('/api/feishu/sync', {})); }
   catch (error) { showError(error); }
   finally { state.busy = false; syncBusy(); }
+});
+
+let filterSchema=[];
+$('#open-search-filters').addEventListener('click',async()=>{
+  $('#search-filter-dialog').showModal();$('#filter-error').hidden=true;
+  $('#search-filter-fields').replaceChildren(element('p','saved-meta','正在读取 Boss 搜索页的筛选选项…'));
+  $('#submit-search-filters').dataset.unavailable='true';
+  try {
+    const data=await command({command:'search-filters'},'正在读取 Boss 筛选条件…');
+    views.online.stale=true;
+    if(state.view==='online')renderDetail();
+    notice('筛选选项已读取，选择条件后点击“应用并搜索”。');
+    filterSchema=data.groups;
+    $('#filter-context').textContent=`当前 Boss 岗位：${data.job || '未选择'} · 关键词：${data.keyword || '未输入'}`;
+    $('#search-filter-fields').replaceChildren(...filterSchema.map(group=>{
+      const field=element('fieldset');field.append(element('legend','',group.label));
+      const options=element('div','filter-options');
+      const selected=state.searchFilters ? (group.multiple?state.searchFilters[group.key]:[state.searchFilters[group.key]]) : group.selected;
+      for(const option of group.options){
+        const label=element('label','filter-option');const input=document.createElement('input');
+        input.type=group.multiple?'checkbox':'radio';input.name=group.key;input.value=option;input.checked=selected.includes(option);
+        if(!group.multiple)input.required=true;
+        label.append(input,document.createTextNode(option));options.append(label);
+      }
+      field.append(options);return field;
+    }));
+    $('#submit-search-filters').dataset.unavailable='false';syncBusy();
+  }catch(error){$('#filter-error').textContent=error.message;$('#filter-error').hidden=false;$('#search-filter-fields').replaceChildren();}
+});
+$('#close-search-filters').addEventListener('click',()=>$('#search-filter-dialog').close());
+$('#reset-search-filters').addEventListener('click',()=>{
+  $('#search-filter-fields').querySelectorAll('input').forEach(input=>{input.checked=input.type==='radio'&&input.value==='不限';});
+});
+$('#search-filter-form').addEventListener('submit',event=>{
+  event.preventDefault();
+  if(state.busy||state.remoteBusy)return;
+  const form=new FormData(event.currentTarget);
+  state.searchFilters=Object.fromEntries(filterSchema.map(group=>[group.key,group.multiple?form.getAll(group.key):form.get(group.key)]));
+  $('#search-filter-summary').textContent=filterSchema.map(group=>`${group.label}：${(group.multiple?state.searchFilters[group.key].join('、'):state.searchFilters[group.key])||'不限'}`).join(' · ');
+  $('#search-filter-dialog').close();$('#query').requestSubmit();
 });

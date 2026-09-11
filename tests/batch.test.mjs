@@ -16,6 +16,7 @@ test('批量自动入库、互斥、节奏、停止，服务重启后简历仍�
   await mkdir(join(dir,'dist/web'),{recursive:true});await mkdir(join(dir,'dist/cli'),{recursive:true});await mkdir(join(dir,'screens'));
   for(const name of ['server.js','database.js','resume-retry.js','feishu.js'])await copyFile('dist/web/'+name,join(dir,'dist/web',name));
   await mkdir(join(dir,'dist/toolset'),{recursive:true});
+  await copyFile('dist/toolset/search-filters.js',join(dir,'dist/toolset/search-filters.js'));
   await copyFile('dist/toolset/candidate_result.js',join(dir,'dist/toolset/candidate_result.js'));
   await writeFile(join(dir,'package.json'),' {"type":"module"}');
   await writeFile(join(dir,'dist/config.js'),`export const RESUME_SCREENSHOTS_DIR=${JSON.stringify(join(dir,'screens'))};`);

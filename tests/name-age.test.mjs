@@ -49,3 +49,10 @@ test('推荐和搜索实际点击同时匹配毕业标签和学历', async () =>
   }
  } finally { await browser.close(); }
 });
+
+test('延迟渲染的技能标签不使身份校验失效，平台标识变化仍然拒绝', () => {
+ const candidate={platformId:'expect:123',name:'李**',basicInfo:'25岁 / 3年 / 本科',tags:[]};
+ const token=candidateToken(candidate);
+ assert.doesNotThrow(()=>assertPreviewCandidate([{...candidate,tags:['React','AI']}],candidate.name,token,25));
+ assert.throws(()=>assertPreviewCandidate([{...candidate,platformId:'expect:456'}],candidate.name,token,25),{code:'STALE_LIST'});
+});

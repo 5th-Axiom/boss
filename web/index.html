@@ -10,6 +10,13 @@
 <div class="sources" role="group" aria-label="候选人来源"><button data-source="recommend" aria-pressed="true">岗位推荐</button><button data-source="search" aria-pressed="false">关键词搜索</button></div>
 <form id="query"><label class="sr-only" for="keyword">岗位关键词</label><input id="keyword" placeholder="输入岗位关键词，例如：前端工程师" maxlength="100" autocomplete="off"><button id="load" type="submit" class="primary" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><span>加载候选人</span></button></form>
 </section>
+<div id="search-filter-actions" class="collection-actions" hidden><button id="open-search-filters" class="secondary">筛选条件</button><span id="search-filter-summary">未设置，沿用 Boss 当前筛选</span></div>
+<dialog id="search-filter-dialog" aria-labelledby="search-filter-title">
+<form id="search-filter-form"><div class="filter-heading"><h2 id="search-filter-title">筛选候选人</h2><button id="close-search-filters" type="button" class="secondary">取消</button></div>
+<p id="filter-context" class="saved-meta"></p><p class="saved-meta">选项来自 Boss 当前搜索页。院校可多选，不选表示不限；城市、岗位、薪资等其他条件沿用 Boss 当前设置。学历和经验暂支持预设范围。</p>
+<div id="search-filter-fields"></div><p id="filter-error" role="alert" hidden></p>
+<div class="filter-footer"><button id="reset-search-filters" type="button" class="secondary">本面板设为不限</button><button id="submit-search-filters" type="submit" class="primary">应用并搜索</button></div></form>
+</dialog>
 <div class="collection-actions" id="collection-actions"><button id="collect" class="secondary" disabled>一键采集简历</button><label class="collection-limit" for="collect-limit">采集数量 <input id="collect-limit" type="number" min="1" max="500" step="1" value="30" inputmode="numeric" aria-describedby="collect-hint"> 份</label><span id="collect-hint">不足时向下加载 · 跳过本地已有简历 · 每份间隔 15–25 秒</span></div>
 <section id="batch-panel" class="batch-panel" aria-label="批量采集进度" hidden><div><strong id="batch-title"></strong><p id="batch-detail" role="status" aria-live="polite"></p><progress id="batch-progress" max="1" value="0"></progress><details id="batch-failures" hidden><summary></summary><ul id="batch-failure-list"></ul></details></div><button id="stop-batch" class="secondary">停止采集</button></section>
 <section id="feishu-actions" class="collection-actions" hidden aria-label="飞书同步">

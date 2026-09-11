@@ -1,3 +1,4 @@
+import {readSearchFilters,applySearchFilters,type SearchFilters} from './search-filters.js';
 import { candidateProfile, candidateToken, type CandidateResult } from './candidate_result.js';
 import type { Frame, Page } from 'puppeteer-core';
 import { RESUME_PREVIEW_OPEN_GAP_MS, sleepRandom } from '../browser/index.js';
@@ -76,7 +77,7 @@ async function ensureSearchFrameReady(frame: Frame): Promise<void> {
   );
 }
 
-async function ensureInNormalSearchPage(page: Page): Promise<Frame> {
+export async function ensureInNormalSearchPage(page: Page): Promise<Frame> {
   await ensurePage(page, {
     name: '常规搜索页',
     targetUrl: BOSS_CHAT_SEARCH_URL,
@@ -98,35 +99,19 @@ export async function assertNormalSearchPageReadyForPreview(page: Page): Promise
 
 async function runKeywordSearch(frame: Frame, keyword: string): Promise<void> {
   const kwLiteral = JSON.stringify(keyword);
-  const ok = (await frame.evaluate(`(() => {
-    const input = document.querySelector(".search-input");
-    if (!(input instanceof HTMLInputElement)) return false;
-    const kw = ${kwLiteral};
-    input.focus();
-    input.value = kw;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent("keydown", {
-      key: "Enter",
-      code: "Enter",
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-      cancelable: true,
-    }));
-    input.dispatchEvent(new KeyboardEvent("keyup", {
-      key: "Enter",
-      code: "Enter",
-      keyCode: 13,
-      which: 13,
-      bubbles: true,
-      cancelable: true,
-    }));
-    return true;
-  })()`)) as boolean;
-  if (!ok) {
-    throw new Error('未找到常规搜索关键词输入框（.search-input）。');
-  }
+  const responsePromise=frame.page().waitForResponse(response=>response.url().includes('/wapi/zpitem/web/boss/search/geeks.json') && response.request().frame()===frame,{timeout:20_000}).then(response=>({response}),error=>({error}));
+  await frame.evaluate(`(() => {
+    const input=document.querySelector('.search-input');
+    const submit=document.querySelector('.search-input-wrap .icon-search');
+    if(!(input instanceof HTMLInputElement)||!submit)throw new Error('Boss 搜索输入框或搜索按钮不存在。');
+    input.value=${kwLiteral};input.dispatchEvent(new Event('input',{bubbles:true}));
+  })()`);
+  await new Promise(resolve=>setTimeout(resolve,0));
+  await frame.evaluate(`document.querySelector('.search-input-wrap .icon-search').click()`);
+  const outcome=await responsePromise;
+  if('error' in outcome)throw new Error('Boss 搜索请求在 20 秒内未返回，请检查搜索页状态。');
+  const payload=await outcome.response.json();
+  if(!outcome.response.ok() || payload.code!==0) throw new Error(`Boss 搜索失败（${payload.code ?? outcome.response.status()}）：${payload.message ?? payload.msg ?? '请求未成功'}`);
 
   await frame.waitForFunction(
     `((kw) => {
@@ -197,6 +182,8 @@ export async function openNormalSearchResumePreview(frame: Frame, target: string
 }
 
 export async function readNormalSearchCandidates(frame: Frame): Promise<NormalSearchCandidate[]> {
+  const noMatches=await frame.evaluate(`Array.from(document.querySelectorAll('.rcd-data-tips')).some(n=>n.getBoundingClientRect().height>0 && n.textContent.includes('暂无相关牛人'))`);
+  if(noMatches) return [];
   return (await frame.evaluate(`(() => {
     const norm = (v) => (v ?? "").replace(/\\s+/g, " ").trim();
     const unique = (items) => Array.from(new Set(items.map(norm).filter(Boolean)));
@@ -210,7 +197,7 @@ export async function readNormalSearchCandidates(frame: Frame): Promise<NormalSe
         .map((el) => norm(el.textContent))
         .filter(Boolean);
       return {
-        platformId: card.getAttribute("data-geekid") || "",
+        platformId: card.querySelector('a[data-expect]')?.getAttribute("data-expect") ? "expect:" + card.querySelector('a[data-expect]').getAttribute("data-expect") : "",
         name: norm(card.querySelector(".name-label")?.textContent),
         active: norm(card.querySelector(".active-desc-text")?.textContent),
         labels,
@@ -267,7 +254,7 @@ function renderNormalSearchCandidates(
   return lines.join('\n');
 }
 
-export async function runNormalSearch(keyword?: string, json = false): Promise<string> {
+export async function runNormalSearch(keyword?: string, json = false, filters?:SearchFilters): Promise<string> {
   const kw = (keyword ?? '').trim();
   if (kw.length > 20) {
     throw new Error('常规搜索关键词最多 20 个字符。');
@@ -275,7 +262,8 @@ export async function runNormalSearch(keyword?: string, json = false): Promise<s
   try {
     return await withBossSessionPage(async (page) => {
       const frame = await ensureInNormalSearchPage(page);
-      if (kw) {
+      if(filters) await applySearchFilters(frame,filters);
+      if (kw || filters) {
         await runKeywordSearch(frame, kw);
       }
 
@@ -285,8 +273,8 @@ export async function runNormalSearch(keyword?: string, json = false): Promise<s
         readNormalSearchCandidates(frame),
       ]);
       if (json) {
-        const result = normalSearchResult(candidates, [currentKeyword, currentJob].filter(Boolean).join(' · '));
-        return JSON.stringify(result);
+        const result = normalSearchResult(candidates, [currentKeyword, currentJob,filters ? Object.entries(filters).map(([key,value])=>`${key}=${Array.isArray(value)?value.join('、'):value}`).join('；') : ''].filter(Boolean).join(' · '));
+        return JSON.stringify({...result,filters});
       }
       return renderNormalSearchCandidates(candidates, {
         keyword: currentKeyword || kw,
@@ -308,4 +296,11 @@ export function normalSearchResult(candidates: NormalSearchCandidate[], context:
             work: c.work, education: c.education, tags: [...c.labels, ...c.tags], active: c.active,
           })),
         };
+}
+
+export async function runSearchFilterOptions():Promise<string> {
+  return withBossSessionPage(async page=>{
+    const frame=await ensureInNormalSearchPage(page);
+    return JSON.stringify({groups:await readSearchFilters(frame),keyword:await readNormalSearchKeyword(frame),job:await readCurrentSearchJob(frame)});
+  });
 }

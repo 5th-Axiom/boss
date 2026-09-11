@@ -173,6 +173,8 @@ function printHelp(): void {
   boss search [关键词] [--json]
       进入「搜索」页并读取 Boss 默认常规搜索结果；带关键词时填入搜索框并回车搜索
   boss preview <姓名>
+      搜索筛选选项: search-filters --json
+      带条件搜索: search "关键词" --json --filters <JSON>（学历、院校、经验、活跃度、跳槽频率）
       JSON 图片预览: preview "姓名" --json --source recommend|search --token <token> [--age <年龄>]
       在线简历预览：须当前已在「推荐」(/web/chat/recommend)、「深度搜索」(/web/chat/aiform) 或「常规搜索」(/web/chat/search) 且列表已加载；不会自动跳转
       注意：平台对在线简历每日可查看次数有限，请按需使用、谨慎查看

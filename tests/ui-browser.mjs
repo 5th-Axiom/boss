@@ -14,7 +14,7 @@ const fixtures = [
   { name: '测试候选人甲', token: 'a'.repeat(64), basicInfo: '5 年经验 / 本科 / 上海', salary: '20–30K', summary: '测试资料：负责企业招聘平台的前端架构，关注复杂表单、组件设计与性能优化。', expectation: '上海 · 前端工程师 · 20–30K', work: ['测试科技有限公司 · 高级前端工程师 · 2021–至今', '示例软件团队 · 前端工程师 · 2019–2021'], education: '示例大学 · 计算机科学 · 本科', tags: ['React', 'TypeScript', '前端架构'], active: '测试状态' },
   { name: '测试候选人乙', token: 'b'.repeat(64), basicInfo: '3 年经验 / 硕士', salary: '', summary: '<img src=x onerror=alert(1)> 测试：此内容应显示为文本', expectation: '', work: [], education: '', tags: [], active: '' },
 ];
-let batchPayload, syncClicked = false;
+let batchPayload, searchPayload, syncClicked = false;
 let listReadCount = 0;
 let previewCount = 0, failSearch = false, emptySearch = false, stalePreview = false;
 try {
@@ -28,6 +28,8 @@ try {
     if (url.pathname === '/api/local') return request.respond({ status:200, contentType:'application/json', body:JSON.stringify({source:'local',context:'本地保存 2 位候选人',total:2,candidates:fixtures.map((c,i)=>({...c,localId:'local-'+i,identityConfirmed:true,source:'recommend',context:'测试岗位',updatedAt:new Date().toISOString(),resumeFailure:i===1?{reason:'测试：简历窗口未出现',code:'RESUME_NOT_OPENED',failedAt:new Date().toISOString()}:null,imageUrl:i===0?'/test-resume.svg':null}))}) });
     if (url.pathname === '/api/command') {
       const data = JSON.parse(request.postData());
+      if(data.command==='search-filters')return request.respond({status:200,contentType:'application/json',body:JSON.stringify({job:'测试岗位',keyword:'',groups:[{key:'degree',label:'学历要求',multiple:false,options:['不限','本科及以上','硕士及以上'],selected:['本科及以上']},{key:'schools',label:'院校要求',multiple:true,options:['985院校','211院校'],selected:[]},{key:'experience',label:'经验要求',multiple:false,options:['不限','26年后毕业'],selected:['不限']},{key:'activity',label:'牛人活跃度',multiple:false,options:['不限','今日活跃'],selected:['不限']},{key:'jobChanges',label:'跳槽频率',multiple:false,options:['不限','5年少于3份'],selected:['不限']}]})});
+      if(data.command==='search')searchPayload=data;
       if (data.command === 'recommend' || data.command === 'search') listReadCount++;
       let result;
       if (failSearch) return request.respond({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: '测试错误：Boss 登录已失效，请重新登录。' }) });
@@ -146,6 +148,20 @@ try {
   await page.evaluate(`window.testStatusEvents.dispatchEvent(new MessageEvent('message',{data:${JSON.stringify(JSON.stringify({...session,busy:false,operation:null,batch:null,feishuSync:{status:'failed',total:102,completed:50,skipped:1,error:'测试错误：附件上传权限不足'}}))}}))`);
   assert.equal(await page.$eval('#sync-feishu',n=>n.disabled),false);
   await page.screenshot({path:join(output,'mobile-feishu.png'),fullPage:true});
+  failSearch=false;emptySearch=false;
+  await page.click('[data-view=online]');
+  await page.click('#open-search-filters');
+  await page.waitForSelector('#search-filter-fields input');
+  await page.click('#search-filter-fields input[value="硕士及以上"]');
+  await page.setViewport({width:1440,height:1050});
+  await page.screenshot({path:join(output,'desktop-search-filters.png'),fullPage:true});
+  await page.setViewport({width:390,height:844});
+  await page.screenshot({path:join(output,'mobile-search-filters.png'),fullPage:true});
+  await page.click('#submit-search-filters');
+  await page.waitForFunction('document.querySelector("#count").textContent === "2" && !document.querySelector("#load").disabled');
+  assert.equal(searchPayload.filters.degree,'硕士及以上');
+  await page.click('#collect');await page.waitForSelector('#collect:not([disabled])');
+  assert.equal(batchPayload.filters.degree,'硕士及以上');
   assert.deepEqual(errors, []);
   console.log(`Browser UI checks passed. Screenshots: ${output}`);
 } finally { await browser.close(); }

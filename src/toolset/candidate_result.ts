@@ -21,7 +21,9 @@ export type CandidateResult = {
   candidates: Candidate[];
 };
 export function candidateToken(candidate: object): string {
-  return createHash('sha256').update(JSON.stringify(candidate)).digest('hex');
+  // 技能标签由 Boss 延迟排版，不能把显示变化当作候选人变化。
+  const { tags: _tags, ...snapshot } = candidate as Record<string, unknown>;
+  return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
 }
 
 export class CandidateSelectionError extends Error {

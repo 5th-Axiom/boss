@@ -1,7 +1,8 @@
 import { runListMore } from '../toolset/list-more.js';
 import { runLogin } from '../toolset/login.js';
 import { runRecommend } from '../toolset/recommend.js';
-import { runNormalSearch } from '../toolset/normal-search.js';
+import {validateSearchFilters} from '../toolset/search-filters.js';
+import { runNormalSearch, runSearchFilterOptions } from '../toolset/normal-search.js';
 import { runPreview } from '../toolset/preview.js';
 
 /** Explicit machine interface; stdout contains exactly one JSON document. */
@@ -11,6 +12,8 @@ export async function executeJsonCommand(command: string, args: string[]): Promi
     if (tail.length !== 2 || tail[0] !== '--source' || !['recommend', 'search'].includes(tail[1])) throw new Error('用法: list-more --json --source recommend|search');
     return runListMore(tail[1] as 'recommend' | 'search', command === 'list-more');
   }
+  if(command==='search-filters' && tail.length===0) return runSearchFilterOptions();
+  if(command==='search' && tail.length===3 && tail[1]==='--filters') return runNormalSearch(tail[0],true,validateSearchFilters(JSON.parse(tail[2])));
   if (command === 'login' && tail.length === 0) {
     return JSON.stringify({ message: await runLogin() });
   }

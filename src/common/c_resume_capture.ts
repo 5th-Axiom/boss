@@ -127,22 +127,28 @@ export async function waitForVisibleCResumeIframeReady(
       const box = await iframe.boundingBox();
       const contentFrame = await iframe.contentFrame();
       if (box && box.width > 8 && box.height > 8) {
-        if (!contentFrame) {
-          return true;
-        }
+        if (!contentFrame) continue;
         try {
           const ready = (await contentFrame.evaluate(`(() => {
             const body = document.body;
             const doc = document.documentElement;
             const readyStateOk = document.readyState === "complete" || document.readyState === "interactive";
             const contentHeight = Math.max(body?.scrollHeight || 0, doc?.scrollHeight || 0);
-            return readyStateOk && contentHeight > 100;
+            const canvas = document.querySelector('canvas#resume');
+            if (!readyStateOk || contentHeight <= 100 || !canvas || canvas.width <= 300 || canvas.height <= 150) return false;
+            const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+            let ink = 0;
+            for (let i = 0; i < pixels.length; i += 16) {
+              if (pixels[i + 3] > 128 && pixels[i] < 160 && pixels[i + 1] < 160 && pixels[i + 2] < 160) ink++;
+              if (ink > 100) return true;
+            }
+            return false;
           })()`)) as boolean;
           if (ready) {
             return true;
           }
-        } catch {
-          return true;
+        } catch (error) {
+          throw new Error(`简历画布就绪检查失败：${error instanceof Error ? error.message : String(error)}`);
         }
       }
     } finally {
@@ -166,7 +172,9 @@ export async function captureCResumeIframeToFile(
   try {
     // Boss 简历布局包含侧栏与固定宽度内容；窄视口会造成横向滚动和遮挡。
     await setTempHeight(page, { ...preOpenViewport, width: Math.max(preOpenViewport.width, 1440) });
-    await waitForVisibleCResumeIframeReady(page, 2_000);
+    if (!(await waitForVisibleCResumeIframeReady(page, 18_000))) {
+      throw new Error('简历画布在 18 秒内未完成文字绘制，未保存空白附件。');
+    }
 
     const iframe = await findVisibleCResumeIframeHandle(page);
     if (!iframe) {

@@ -1,3 +1,4 @@
+import {validateSearchFilters,type SearchFilters} from '../toolset/search-filters.js';
 import { configuredFeishu, syncToFeishu, type SyncProgress } from './feishu.js';
 import { candidateAge, candidateIdentity } from '../toolset/candidate_result.js';
 import { previewWithRetry } from './resume-retry.js';
@@ -105,11 +106,12 @@ async function previewAndSave(candidate: CandidateResult['candidates'][number], 
     throw error;
   }
 }
-async function runBatch(source: string, keyword: string, abort: AbortController) {
+async function runBatch(source: string, keyword: string, abort: AbortController, filters?:SearchFilters) {
   const current = batch!;
   try {
-    const result = await runCli([source, keyword, '--json']) as CandidateResult;
+    const result = await runCli([source, keyword, '--json',...(filters?['--filters',JSON.stringify(filters)]:[])]) as CandidateResult;
     if (result.source !== source || !Array.isArray(result.candidates)) throw new Error('CLI 返回的列表格式不正确。');
+    if(!result.candidates.length)throw new Error('当前条件没有匹配候选人，请调整搜索条件后重新采集。');
     const context = result.context;
     let pageResult = result;
     const visited = new Set<string>();
@@ -249,27 +251,32 @@ const server = createServer(async (req, res) => {
       if (!['recommend','search'].includes(String(data.source)) || typeof data.keyword !== 'string' || data.keyword.startsWith('-') || data.keyword.length > (data.source === 'search' ? 20 : 100)) throw new HttpError(400, '采集来源或关键词不正确。');
       const limit = data.limit ?? 30;
       if (!Number.isInteger(limit) || Number(limit) < 1 || Number(limit) > 500) throw new HttpError(400, '采集数量必须是 1–500 的整数。');
+      const filters=data.filters===undefined?undefined:validateSearchFilters(data.filters);
+      if(filters && data.source!=='search')throw new HttpError(400,'筛选条件仅支持搜索。');
       busy = true; operation = { command:'batch', startedAt: Date.now() };
       batch = { id:randomUUID(), status:'running', total:Number(limit), completed:0, skipped:0, failures:[], current:'', phase:'list' };
       batchAbort = new AbortController(); snapshot = undefined;
       publishStatus();
       json(res, 202, batch);
-      void runBatch(String(data.source), data.keyword, batchAbort);
+      void runBatch(String(data.source), data.keyword, batchAbort, filters);
       return;
     }
     if (req.method === 'POST' && url.pathname === '/api/command') {
       if (req.headers['x-boss-token'] !== csrf || req.headers['content-type'] !== 'application/json') throw new HttpError(403, '请求校验失败，请刷新页面。');
       const data = await body(req);
-      if (typeof data.command !== 'string' || !['login', 'recommend', 'search', 'preview'].includes(data.command)) throw new HttpError(400, '不支持的操作。');
+      if (typeof data.command !== 'string' || !['login', 'recommend', 'search', 'preview','search-filters'].includes(data.command)) throw new HttpError(400, '不支持的操作。');
       if (busy) throw new HttpError(409, `操作 ${operation!.command} 正在执行，请等待完成。`);
       const command = data.command as string;
       if (command === 'search' || command === 'recommend') {
         if (typeof data.keyword !== 'string' || data.keyword.startsWith('-') || data.keyword.length > (command === 'search' ? 20 : 100)) throw new HttpError(400, '关键词格式不正确（搜索最多 20 字，岗位最多 100 字，不能以 - 开头）。');
       }
+      const filters=data.filters===undefined?undefined:validateSearchFilters(data.filters);
+      if(filters && command!=='search')throw new HttpError(400,'筛选条件仅支持搜索。');
       busy = true;
       operation = { command, startedAt: Date.now() };
       publishStatus();
       try {
+        if(command==='search-filters'){snapshot=undefined;return json(res,200,await runCli(['search-filters','--json']));}
         if (command === 'login') {
           snapshot = undefined;
           return json(res, 200, await runCli(['login', '--json']));
@@ -286,7 +293,7 @@ const server = createServer(async (req, res) => {
           return json(res, 200, await previewAndSave(candidate, snapshot.source));
         }
         snapshot = undefined;
-        const result = await runCli([command, data.keyword as string, '--json']) as CandidateResult;
+        const result = await runCli([command, data.keyword as string, '--json',...(filters?['--filters',JSON.stringify(filters)]:[])]) as CandidateResult;
         if (result.source !== command || !Array.isArray(result.candidates)) throw new Error('CLI 返回的数据格式不正确。');
         snapshot = { ...database.saveList(result), id: randomUUID() };
         return json(res, 200, snapshot);
