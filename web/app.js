@@ -292,8 +292,8 @@ function renderBatch() {
   $('#batch-panel').hidden = !batch;
   if (!batch) return;
   const labels = { running:'正在采集', complete:'采集完成', stopped:'已停止采集', failed:'采集已停止：发生错误' };
-  $('#batch-title').textContent = `${labels[batch.status]} · 新增简历 ${batch.completed} / ${batch.total} · 跳过已有 ${batch.skipped ?? 0} · 失败跳过 ${(batch.failures ?? []).length}`;
-  $('#batch-detail').textContent = batch.error || (batch.phase === 'list' ? '正在读取并保存当前列表' : batch.phase === 'retrying' ? `${batch.current} 的简历未打开，等待至 ${new Date(batch.nextAt).toLocaleTimeString('zh-CN')} 重新读取列表后重试（第 ${batch.retry} / 2 次重试）` : batch.phase === 'scrolling' ? '正在向下滚动，加载更多候选人…' : batch.phase === 'waiting' ? `下一位：${batch.current} · 等待至 ${new Date(batch.nextAt).toLocaleTimeString('zh-CN')}` : batch.phase === 'preview' ? `正在打开 ${batch.current} 的简历，完成后保存` : '已成功采集的资料保留在本地候选人库。');
+  $('#batch-title').textContent = `${labels[batch.status]} · 新增简历 ${batch.completed} / ${batch.total} · 跳过已有 ${batch.skipped ?? 0} · 失败跳过 ${(batch.failures ?? []).length} · 列表刷新 ${batch.refreshCount ?? 0} 次`;
+  $('#batch-detail').textContent = batch.error || batch.progressMessage || (batch.phase === 'list' ? '正在读取并保存当前列表' : batch.phase === 'retrying' ? `${batch.current} 的简历未打开，等待至 ${new Date(batch.nextAt).toLocaleTimeString('zh-CN')} 重新读取列表后重试（第 ${batch.retry} / 2 次重试）` : batch.phase === 'scrolling' ? '正在向下滚动，加载更多候选人…' : batch.phase === 'waiting' ? `下一位：${batch.current} · 等待至 ${new Date(batch.nextAt).toLocaleTimeString('zh-CN')}` : batch.phase === 'preview' ? `正在打开 ${batch.current} 的简历，完成后保存` : '已成功采集的资料保留在本地候选人库。');
   $('#batch-progress').max = Math.max(1,batch.total); $('#batch-progress').value = batch.completed;
   $('#stop-batch').hidden = batch.status !== 'running';
   const failures = batch.failures ?? [];

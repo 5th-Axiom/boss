@@ -123,6 +123,9 @@ try {
   assert.equal(await page.$eval('#batch-failures',node=>node.hidden),false);
   assert.match(await page.$eval('#batch-failure-list',node=>node.textContent),/25 岁.*暂不可访问/);
   assert.equal(await page.$eval('#stop-batch',node=>node.disabled),false);
+  await page.evaluate(`window.testStatusEvents.dispatchEvent(new MessageEvent('message',{data:${JSON.stringify(JSON.stringify({...session,busy:true,operation:{command:'batch'},batch:{status:'running',total:300,completed:148,skipped:229,failures:[],phase:'waiting-list',progressMessage:'已点击列表刷新，正在等待新的候选人',refreshCount:1}}))}}))`);
+  assert.match(await page.$eval('#batch-detail',node=>node.textContent),/已点击列表刷新/);
+  assert.match(await page.$eval('#batch-title',node=>node.textContent),/列表刷新 1 次/);
 
   await page.evaluate(`window.testStatusEvents.dispatchEvent(new MessageEvent('message',{data:${JSON.stringify(JSON.stringify({...session,busy:false,operation:null,batch:null}))}}))`);
   await page.click('[data-view=online]');

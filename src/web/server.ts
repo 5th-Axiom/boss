@@ -26,7 +26,7 @@ const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
 let busy = false;
 let operation: { command: string; startedAt: number } | null = null;
 const statusClients = new Set<ServerResponse>();
-type BatchState = { id: string; status: 'running' | 'complete' | 'stopped' | 'failed'; total: number; completed: number; skipped: number; failures: Array<{name:string; age?:number; reason:string}>; current: string; phase: string; error?: string; retry?: number; retryReason?: string; nextAt?: number };
+type BatchState = { id: string; status: 'running' | 'complete' | 'stopped' | 'failed'; total: number; completed: number; skipped: number; failures: Array<{name:string; age?:number; reason:string}>; current: string; phase: string; progressMessage?:string; refreshCount?:number; error?: string; retry?: number; retryReason?: string; nextAt?: number };
 let batch: BatchState | null = null;
 let batchAbort: AbortController | null = null;
 let feishuSync: SyncProgress | null = null;
@@ -56,12 +56,24 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
     return value;
   } catch { throw new HttpError(400, '请求必须为 JSON 对象。'); }
 }
-async function runCli(args: string[]): Promise<unknown> {
+async function runCli(args: string[], onProgress?: (event:{phase:string;message:string})=>void): Promise<unknown> {
   try {
-    const { stdout } = await exec(process.execPath, [cli, ...args], {
+    const execution = exec(process.execPath, [cli, ...args], {
       cwd: root, env: { ...process.env, BOSS_RESUME_OCR: '0' },
       timeout: 120_000, maxBuffer: 8 * 1024 * 1024,
     });
+    let pending='';
+    if (onProgress) execution.child.stderr?.on('data', chunk => {
+      pending+=chunk.toString();
+      let newline:number;
+      while ((newline=pending.indexOf('\n'))>=0) {
+        const line=pending.slice(0,newline);pending=pending.slice(newline+1);
+        if (!line.startsWith('[boss-progress]')) continue;
+        const event=JSON.parse(line.slice('[boss-progress]'.length));
+        if (['refreshing','waiting-list'].includes(event.phase) && typeof event.message==='string') onProgress(event);
+      }
+    });
+    const {stdout}=await execution;
     return JSON.parse(stdout);
   } catch (e) {
     const error = e as Error & { stdout?: string; stderr?: string; killed?: boolean };
@@ -160,8 +172,9 @@ async function runBatch(source: string, keyword: string, abort: AbortController)
         }
       }
       if (abort.signal.aborted || current.completed >= current.total) break;
-      current.phase = 'scrolling'; current.current = ''; publishStatus();
-      pageResult = await runCli(['list-more', '--json', '--source', source]) as CandidateResult;
+      current.phase = 'scrolling'; current.progressMessage=undefined; current.current = ''; publishStatus();
+      pageResult = await runCli(['list-more', '--json', '--source', source], event=>{current.phase=event.phase;current.progressMessage=event.message;if(event.phase==='refreshing')current.refreshCount=(current.refreshCount??0)+1;publishStatus();}) as CandidateResult;
+      current.progressMessage=undefined;
       if (pageResult.source !== source || !Array.isArray(pageResult.candidates)) throw new Error('继续加载返回的候选人格式不正确。');
       if (!pageResult.candidates.some(c => c.platformId && !visited.has(c.platformId))) throw new Error('滚动后未发现新的候选人，已停止采集，已保存的数据保留。');
     }
