@@ -248,3 +248,15 @@ CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" node 
 ### 搜索筛选
 
 工作台切换到“关键词搜索”，点击“筛选条件”，选择 Boss 实时提供的学历、院校、经验、活跃度和跳槽频率，点击“应用并搜索”。批量采集会沿用这组条件。城市、岗位、薪资等其他条件沿用 Boss 当前设置；学历与经验暂支持预设范围。无匹配结果时显示空列表，不采集 Boss 额外推荐的人选。
+
+## DeepSeek 模型配置
+
+仓库的 `config/model.json` 包含共享的 DeepSeek API Key、接口地址和模型名称。安装后可复制到本地配置目录：
+
+```bash
+mkdir -p ~/.boss-cli
+cp config/model.json ~/.boss-cli/model.json
+chmod 600 ~/.boss-cli/model.json
+```
+
+当前工作台尚未接入自动简历分析；此配置供模型分析程序读取，复制配置不会自动开启分析或收藏。
